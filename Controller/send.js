@@ -8,45 +8,14 @@ var decorator = module.exports = function (options, protect) {
   var baucis = require('..');
   var controller = this;
   var lastModifiedPath = controller.model().lastModified();
-  var trailers = {};
 
   // __Private Module Members__
-  // Format the Trailer header.
-  function addTrailer (response, header) {
-    var current = response.get('Trailer');
-    if (!current) response.set('Trailer', header);
-    else response.set('Trailer', current + ', ' + header);
-  }
   // A map that is used to create empty response body.
   function empty (context, callback) { callback(null, '') }
   // Map contexts back into documents.
   function redoc (context, callback) { callback(null, context.doc) }
-  // Generate a respone Etag from a context.
-  function etag (response, useTrailer) {
-    if (useTrailer) {
-      addTrailer(response, 'Etag');
-      response.set('Transfer-Encoding', 'chunked');
-    }
 
-    var hash = crypto.createHash('md5');
-
-    return es.through(function (chunk) {
-      hash.update(chunk);
-      this.emit('data', chunk);
-    },
-    function () {
-      if (useTrailer) {
-        trailers.Etag = '"' + hash.digest('hex') + '"';
-      }
-      else {
-        response.set('Etag', '"' + hash.digest('hex') + '"');
-      }
-
-      this.emit('end');
-    });
-  }
-
-  function etagImmediate (response) {
+  function etag (response) {
     var hash = crypto.createHash('md5');
 
     return es.through(function (chunk) {
@@ -58,13 +27,8 @@ var decorator = module.exports = function (options, protect) {
       this.emit('end');
     });
   }
-  // Generate a Last-Modified header/trailer
-  function lastModified (response, useTrailer) {
-    if (useTrailer) {
-      addTrailer(response, 'Last-Modified');
-      response.set('Transfer-Encoding', 'chunked');
-    }
-
+  // Generate a Last-Modified header
+  function lastModified (response) {
     var latest = null;
 
     return es.through(function (context) {
@@ -75,16 +39,11 @@ var decorator = module.exports = function (options, protect) {
       var current = context.doc.get(lastModifiedPath);
       if (latest === null) latest = current;
       else latest = new Date(Math.max(latest, current));
-      if (!useTrailer) {
-        response.set('Last-Modified', latest.toUTCString());
-      }
+
+      response.set('Last-Modified', latest.toUTCString());
       this.emit('data', context);
     },
     function () {
-      if (useTrailer) {
-        if (latest) trailers['Last-Modified'] = latest.toUTCString();
-      }
-
       this.emit('end');
     });
   }
@@ -205,24 +164,19 @@ var decorator = module.exports = function (options, protect) {
   // HEAD
   protect.finalize('instance', 'head', function (request, response, next) {
     if (lastModifiedPath) {
-      request.baucis.send(lastModified(response, false));
+      request.baucis.send(lastModified(response));
     }
 
     request.baucis.send(redoc);
-    request.baucis.send(etagImmediate(response));
+    request.baucis.send(etag(response));
     request.baucis.send(request.baucis.formatter());
     request.baucis.send(empty);
     next();
   });
 
   protect.finalize('collection', 'head', function (request, response, next) {
-    if (lastModifiedPath) {
-      request.baucis.send(lastModified(response, false));
-    }
-
     request.baucis.send(redoc);
     request.baucis.send(request.baucis.formatter(true));
-    request.baucis.send(etag(response, false));
     request.baucis.send(empty);
     next();
   });
@@ -230,20 +184,16 @@ var decorator = module.exports = function (options, protect) {
   // GET
   protect.finalize('instance', 'get', function (request, response, next) {
     if (lastModifiedPath) {
-      request.baucis.send(lastModified(response, false));
+      request.baucis.send(lastModified(response));
     }
 
     request.baucis.send(redoc);
-    request.baucis.send(etagImmediate(response));
+    request.baucis.send(etag(response));
     request.baucis.send(request.baucis.formatter());
     next();
   });
 
   protect.finalize('collection', 'get', function (request, response, next) {
-    if (lastModifiedPath) {
-      request.baucis.send(lastModified(response, true));
-    }
-
     if (request.baucis.count) {
       request.baucis.send(count());
       request.baucis.send(es.stringify());
@@ -253,7 +203,6 @@ var decorator = module.exports = function (options, protect) {
       request.baucis.send(request.baucis.formatter(true));
     }
 
-    request.baucis.send(etag(response, true));
     next();
   });
 
@@ -285,7 +234,6 @@ var decorator = module.exports = function (options, protect) {
     request.baucis.send().pipe(es.through(function (chunk) {
       response.write(chunk);
     }, function () {
-      response.addTrailers(trailers);
       response.end();
       this.emit('end');
     }));
