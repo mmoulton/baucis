@@ -13,15 +13,19 @@ var decorator = module.exports = function (options, protect) {
   var controller = this;
 
   function checkBadUpdateOperatorPaths (operator, paths) {
+    console.log(33, operator, paths);
     var bad = false;
     var whitelisted = controller.operators(operator);
     var parts;
 
+    console.log(44, whitelisted);
     if (!whitelisted) return true;
 
     parts = whitelisted.split(/\s+/);
 
+    console.log(55, parts);
     paths.forEach(function (path) {
+      console.log(555, path, parts.indexOf(path) !== -1);
       if (parts.indexOf(path) !== -1) return;
       bad = true;
     });
@@ -159,15 +163,19 @@ var decorator = module.exports = function (options, protect) {
       pipeline(function (context, callback) {
         var wrapper = {};
 
+        console.log(0, context, operator);
+        console.log(1, validOperators.indexOf(operator) === -1);
         if (validOperators.indexOf(operator) === -1) {
           callback(RestError.NotImplemented('The requested update operator "%s" is not supported', operator));
           return;
         }
+        console.log(2, controller.operators(operator));
         // Ensure that some paths have been enabled for the operator.
         if (!controller.operators(operator)) {
           callback(RestError.Forbidden('The requested update operator "%s" is not enabled for this resource', operator));
           return;
         }
+        console.log(3, checkBadUpdateOperatorPaths(operator, Object.keys(context.incoming)));
         // Make sure paths have been whitelisted for this operator.
         if (checkBadUpdateOperatorPaths(operator, Object.keys(context.incoming))) {
           callback(RestError.Forbidden('This update path is forbidden for the requested update operator "%s"', operator));
